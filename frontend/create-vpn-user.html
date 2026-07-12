@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Create VPN User — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body" style="max-width:520px;">
+        <div class="card" id="formCard">
+          <div class="section-header">
+            <h2>Create VPN User</h2>
+            <a class="btn btn-ghost btn-sm" href="vpn-users.html">← Back</a>
+          </div>
+
+          <div class="form-group">
+            <label>Username</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="username" maxlength="12" placeholder="3-12 characters" style="flex:1;">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="fillRandomUsername()">Generate</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Password</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="password" placeholder="Password" style="flex:1;">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="fillRandomPassword()">Generate</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Service Type</label>
+            <input type="text" value="UDP Custom" disabled>
+          </div>
+
+          <div class="form-group" id="connectionLimitGroup">
+            <label>Connection Limit (devices)</label>
+            <input type="number" id="connectionLimit" value="1" min="1">
+            <p class="text-dim" id="resellerLimitNote" style="font-size:0.78rem; margin:6px 0 0;">
+              Resellers can only create single-device users. Only a super admin can raise this limit.
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label>Duration</label>
+            <div class="duration-row">
+              <input type="number" id="durationValue" placeholder="e.g. 30" min="1">
+              <select id="durationType">
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+                <option value="days" selected>Days</option>
+              </select>
+            </div>
+            <p class="text-dim" id="resellerDurationNote" style="font-size:0.78rem; margin:6px 0 0;">
+              Resellers cannot create a user for more than 30 days. Only a super admin can go higher.
+            </p>
+          </div>
+
+          <p class="text-dim" style="font-size:0.8rem;">
+            This user will be strictly removed and disconnected the moment their time expires.
+            The action will show up in the Logs.
+          </p>
+
+          <div class="form-actions">
+            <a class="btn btn-ghost" href="vpn-users.html">Cancel</a>
+            <button class="btn btn-primary" onclick="submitCreate()">Create User</button>
+          </div>
+          <p class="error-text hidden" id="formError"></p>
+        </div>
+
+        <div class="card hidden" id="successCard">
+          <div class="section-header">
+            <h2>✔ User Created</h2>
+          </div>
+          <p class="text-dim" style="font-size:0.85rem; margin-top:0;">
+            Share these details with the customer, or paste the full config
+            straight into their VPN app.
+          </p>
+          <textarea id="successPreview" readonly style="width:100%; height:200px; background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:monospace; font-size:0.8rem;"></textarea>
+          <div class="form-actions">
+            <button class="btn btn-ghost" onclick="copyResultUserOnly()">Copy User:Pass</button>
+            <button class="btn btn-ghost" onclick="copyResultConnectionString()">Copy Connection String</button>
+            <button class="btn btn-primary" onclick="copyResultFullConfig()">Copy Full Config</button>
+          </div>
+          <div class="form-actions">
+            <a class="btn btn-ghost" href="vpn-users.html">Done</a>
+            <button class="btn btn-primary" onclick="createAnother()">Create Another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('vpn-users');
+    renderTopbar('Create VPN User');
+    if (user.role === 'reseller') refreshCreditsDisplay();
+
+    if (user.role === 'reseller') {
+      const limitInput = document.getElementById('connectionLimit');
+      limitInput.value = 1;
+      limitInput.disabled = true;
+    } else {
+      document.getElementById('resellerLimitNote').classList.add('hidden');
+      document.getElementById('resellerDurationNote').classList.add('hidden');
+    }
+
+    const RESELLER_MAX_DURATION_DAYS = 30;
+    function durationExceedsResellerCap(duration_type, duration_value) {
+      if (user.role !== 'reseller') return false;
+      const seconds = duration_type === 'minutes' ? duration_value * 60
+        : duration_type === 'hours' ? duration_value * 3600
+        : duration_value * 86400;
+      return seconds > RESELLER_MAX_DURATION_DAYS * 86400;
+    }
+
+    let lastCreatedUser = null;
+    let serverConfigCache = null;
+
+    function fillRandomUsername() {
+      document.getElementById('username').value = generateRandomUsername();
+    }
+
+    function fillRandomPassword() {
+      document.getElementById('password').value = generateRandomPassword();
+    }
+
+    async function submitCreate() {
+      const errEl = document.getElementById('formError');
+      errEl.classList.add('hidden');
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const connection_limit = parseInt(document.getElementById('connectionLimit').value, 10);
+      const duration_value = parseInt(document.getElementById('durationValue').value, 10);
+      const duration_type = document.getElementById('durationType').value;
+
+      if (!username || !password || !duration_value) {
+        errEl.textContent = 'Please fill in username, password, and duration.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      if (durationExceedsResellerCap(duration_type, duration_value)) {
+        errEl.textContent = 'Resellers cannot create a VPN user for more than 30 days.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const created = await apiFetch('/vpn-users', {
+          method: 'POST',
+          body: JSON.stringify({
+            username, password, service_type: 'udp_custom', connection_limit,
+            duration_type, duration_value
+          })
+        });
+
+        // Build the full object needed for the copy helpers
+        lastCreatedUser = {
+          username,
+          password,
+          connection_limit: connection_limit || 1,
+          expires_at: new Date(created.expires_at * 1000).toISOString()
+        };
+
+        try {
+          serverConfigCache = await apiFetch('/server-config');
+          document.getElementById('successPreview').value = buildFullConfigText(serverConfigCache, lastCreatedUser);
+        } catch (err) {
+          document.getElementById('successPreview').value =
+            `Username: ${username}\nPassword: ${password}\n\n(Server Config isn't set up yet, so the full connection string can't be built. A super admin can fill it in on the Server Config page.)`;
+        }
+
+        document.getElementById('formCard').classList.add('hidden');
+        document.getElementById('successCard').classList.remove('hidden');
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    function copyResultUserOnly() {
+      if (!lastCreatedUser) return;
+      copyToClipboard(`${lastCreatedUser.username}:${lastCreatedUser.password}`, 'Username:Password');
+    }
+
+    function copyResultConnectionString() {
+      if (!lastCreatedUser || !serverConfigCache) return;
+      copyToClipboard(buildConnectionString(serverConfigCache, lastCreatedUser), 'Connection string');
+    }
+
+    function copyResultFullConfig() {
+      if (!lastCreatedUser || !serverConfigCache) return;
+      copyToClipboard(buildFullConfigText(serverConfigCache, lastCreatedUser), 'Full config');
+    }
+
+    function createAnother() {
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+      document.getElementById('durationValue').value = '';
+      document.getElementById('successCard').classList.add('hidden');
+      document.getElementById('formCard').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

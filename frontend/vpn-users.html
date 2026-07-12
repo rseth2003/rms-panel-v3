@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>VPN Users — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+        <div class="card" id="drillBanner" style="display:none; background:var(--bg-elevated); margin-bottom:14px; padding:12px 16px;">
+          <a href="#" onclick="history.back(); return false;" style="color:var(--accent); font-size:0.85rem;">&larr; Back</a>
+          <span class="text-dim" style="font-size:0.85rem; margin-left:10px;">
+            Viewing <strong id="drillOwnerName" style="color:var(--text);"></strong>'s VPN users
+          </span>
+        </div>
+        <div class="card">
+          <div class="section-header">
+            <h2 id="pageHeading">VPN Users</h2>
+            <a class="btn btn-primary" id="newUserBtn" href="create-vpn-user.html">+ New User</a>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th><th>Owner</th><th>Type</th><th>Limit</th>
+                <th>Expires</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">No VPN users yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="copyModal" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000;">
+    <div class="card" style="width:420px; max-width:90vw;">
+      <div class="section-header">
+        <h2 id="copyModalUsername" style="font-size:1rem;"></h2>
+        <button class="btn btn-ghost btn-sm" onclick="closeCopyModal()">✕</button>
+      </div>
+      <textarea id="copyPreview" readonly style="width:100%; height:180px; background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:monospace; font-size:0.8rem;"></textarea>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="copyUserOnly()">Copy User:Pass</button>
+        <button class="btn btn-ghost" onclick="copyConnectionString()">Copy Connection String</button>
+        <button class="btn btn-primary" onclick="copyFullConfig()">Copy Full Config</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('vpn-users');
+    renderTopbar('VPN Users');
+    if (user.role === 'reseller') refreshCreditsDisplay();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const drillOwnerId = urlParams.get('owner_id');
+    const drillOwnerName = urlParams.get('owner_name');
+
+    if (drillOwnerId) {
+      document.getElementById('drillBanner').style.display = 'block';
+      document.getElementById('drillOwnerName').textContent = drillOwnerName || `#${drillOwnerId}`;
+      document.getElementById('pageHeading').textContent = `${drillOwnerName || 'Owner'}'s VPN Users`;
+      // Creating here would be attributed to the viewer's own account, not
+      // the drilled-into owner - hide it to avoid that confusion.
+      document.getElementById('newUserBtn').style.display = 'none';
+    }
+
+    let loadedUsers = [];
+    let serverConfigCache = null;
+
+    async function loadUsers() {
+      try {
+        const endpoint = drillOwnerId ? `/vpn-users?owner_id=${drillOwnerId}` : '/vpn-users';
+        const users = await apiFetch(endpoint);
+        loadedUsers = users;
+        const body = document.getElementById('tableBody');
+        const empty = document.getElementById('emptyState');
+
+        if (!users.length) {
+          body.innerHTML = '';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+
+        body.innerHTML = users.map(u => {
+          const expiring = isExpiringSoon(u.expires_at);
+          const pillClass = expiring ? 'pill-expiring' : statusPillClass(u.status);
+          const pillLabel = expiring ? 'expiring soon' : u.status;
+          return `
+            <tr>
+              <td class="mono">${u.username}</td>
+              <td>${u.owner_username}</td>
+              <td>${u.service_type === 'udp_custom' ? 'UDP Custom' : 'Hysteria2'}</td>
+              <td>${u.connection_limit}</td>
+              <td>${formatDate(u.expires_at)}</td>
+              <td><span class="pill ${pillClass}">${pillLabel}</span></td>
+              <td>
+                <button class="link-action" onclick="openCopyModal(${u.id})">Copy</button>
+                <button class="link-action" onclick="renewUser(${u.id})">Renew</button>
+                <button class="link-action warning" onclick="toggleBlock(${u.id})">${u.status === 'blocked' ? 'Unblock' : 'Block'}</button>
+                <button class="link-action danger" onclick="deleteUser(${u.id})">Delete</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function openCopyModal(id) {
+      const vpnUser = loadedUsers.find(u => u.id === id);
+      if (!vpnUser) return;
+
+      try {
+        if (!serverConfigCache) {
+          serverConfigCache = await apiFetch('/server-config');
+        }
+      } catch (err) {
+        alert('Server config is not set up yet. Ask a super admin to fill it in on the Server Config page.');
+        return;
+      }
+
+      document.getElementById('copyModalUsername').textContent = vpnUser.username;
+      document.getElementById('copyPreview').value = buildFullConfigText(serverConfigCache, vpnUser);
+      document.getElementById('copyModal').dataset.userId = id;
+      document.getElementById('copyModal').classList.remove('hidden');
+    }
+
+    function closeCopyModal() {
+      document.getElementById('copyModal').classList.add('hidden');
+    }
+
+    function getModalUser() {
+      const id = parseInt(document.getElementById('copyModal').dataset.userId, 10);
+      return loadedUsers.find(u => u.id === id);
+    }
+
+    function copyUserOnly() {
+      const vpnUser = getModalUser();
+      if (!vpnUser) return;
+      copyToClipboard(`${vpnUser.username}:${vpnUser.password}`, 'Username:Password');
+    }
+
+    function copyConnectionString() {
+      const vpnUser = getModalUser();
+      if (!vpnUser || !serverConfigCache) return;
+      copyToClipboard(buildConnectionString(serverConfigCache, vpnUser), 'Connection string');
+    }
+
+    function copyFullConfig() {
+      const vpnUser = getModalUser();
+      if (!vpnUser || !serverConfigCache) return;
+      copyToClipboard(buildFullConfigText(serverConfigCache, vpnUser), 'Full config');
+    }
+
+    async function renewUser(id) {
+      const value = prompt('Renew for how long? Enter a number (you\'ll pick the unit next).');
+      if (!value || isNaN(value)) return;
+      const unit = prompt('Unit: type "minutes", "hours", or "days"', 'days');
+      if (!['minutes', 'hours', 'days'].includes(unit)) return alert('Invalid unit');
+
+      try {
+        await apiFetch(`/vpn-users/${id}/renew`, {
+          method: 'PUT',
+          body: JSON.stringify({ duration_type: unit, duration_value: parseInt(value, 10) })
+        });
+        if (user.role === 'reseller') refreshCreditsDisplay();
+        loadUsers();
+      } catch (err) { alert(err.message); } // includes the 30-day reseller cap message from the API
+    }
+
+    async function toggleBlock(id) {
+      try {
+        await apiFetch(`/vpn-users/${id}/block`, { method: 'PUT' });
+        loadUsers();
+      } catch (err) { alert(err.message); }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm('Delete this VPN user permanently? This disconnects them immediately.')) return;
+      try {
+        await apiFetch(`/vpn-users/${id}`, { method: 'DELETE' });
+        loadUsers();
+      } catch (err) { alert(err.message); }
+    }
+
+    loadUsers();
+    // Auto-refresh every 20s so expired/auto-deleted users disappear live
+    setInterval(loadUsers, 20000);
+  </script>
+</body>
+</html>

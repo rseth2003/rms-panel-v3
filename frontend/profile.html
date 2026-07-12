@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Profile — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body" style="max-width:480px;">
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:16px; margin-bottom:4px;">
+            <div id="profileAvatar"></div>
+            <div>
+              <h2 id="greeting" style="margin:0;"></h2>
+              <p class="text-dim" style="font-size:0.85rem; margin:2px 0 0;">Welcome back to RMS Panel.</p>
+            </div>
+          </div>
+
+          <table style="margin-top:20px;">
+            <tbody>
+              <tr><td class="text-dim">Role</td><td id="profRole"></td></tr>
+              <tr id="creditsRow"><td class="text-dim">Credits</td><td id="profCredits"></td></tr>
+              <tr><td class="text-dim">Status</td><td id="profStatus"></td></tr>
+              <tr><td class="text-dim">Member Since</td><td id="profCreated"></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="section-header">
+            <h2 style="font-size:1rem;">Change Password</h2>
+          </div>
+          <div class="form-group">
+            <label>Current Password</label>
+            <input type="password" id="currentPassword">
+          </div>
+          <div class="form-group">
+            <label>New Password</label>
+            <input type="password" id="newPassword">
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+          </div>
+          <p class="error-text hidden" id="pwError"></p>
+          <p class="text-dim hidden" id="pwSuccess" style="font-size:0.82rem;">Password updated.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('');
+    renderTopbar('Profile');
+
+    document.getElementById('greeting').textContent = `Hello, ${user.username}`;
+    document.getElementById('profileAvatar').innerHTML = avatarSvg(56);
+
+    async function loadProfile() {
+      try {
+        const me = await apiFetch('/auth/me');
+        document.getElementById('profRole').textContent = me.role.replace('_', ' ');
+        document.getElementById('profStatus').textContent = me.status;
+        document.getElementById('profCreated').textContent = formatDate(me.created_at);
+
+        if (me.role === 'reseller') {
+          document.getElementById('profCredits').textContent = me.credits;
+        } else {
+          document.getElementById('creditsRow').classList.add('hidden');
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function changePassword() {
+      const errEl = document.getElementById('pwError');
+      const successEl = document.getElementById('pwSuccess');
+      errEl.classList.add('hidden');
+      successEl.classList.add('hidden');
+
+      const current_password = document.getElementById('currentPassword').value;
+      const new_password = document.getElementById('newPassword').value;
+
+      if (!current_password || !new_password) {
+        errEl.textContent = 'Fill in both fields.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const result = await apiFetch('/auth/change-password', {
+          method: 'PUT',
+          body: JSON.stringify({ current_password, new_password })
+        });
+        // Password change rotates the session token server-side -
+        // update the locally stored token so this tab doesn't get logged out
+        if (result.token) {
+          setSession(result.token, user);
+        }
+        document.getElementById('currentPassword').value = '';
+        document.getElementById('newPassword').value = '';
+        successEl.classList.remove('hidden');
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    loadProfile();
+  </script>
+</body>
+</html>

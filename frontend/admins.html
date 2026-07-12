@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Admins — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+        <div class="card">
+          <div class="section-header">
+            <h2>Admins</h2>
+            <a class="btn btn-primary" href="create-admin.html">+ New Admin Account</a>
+          </div>
+          <p class="text-dim" style="font-size:0.82rem; margin-top:-10px;">
+            Only you (a super admin) can create or manage accounts here. Admins can
+            manage resellers and VPN users, but cannot create or manage other admins.
+          </p>
+          <table>
+            <thead>
+              <tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">No admin accounts found.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    if (user.role !== 'super_admin') window.location.href = 'vpn-users.html';
+    renderSidebar('admins');
+    renderTopbar('Admins');
+
+    async function loadAdmins() {
+      try {
+        const admins = await apiFetch('/admins');
+        const body = document.getElementById('tableBody');
+        const empty = document.getElementById('emptyState');
+
+        if (!admins.length) {
+          body.innerHTML = '';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+
+        body.innerHTML = admins.map(a => `
+          <tr>
+            <td class="mono">
+              ${a.username === user.username
+                ? `${a.username} <span class="text-dim">(you)</span>`
+                : `<a style="color:var(--text);" href="admin-network.html?id=${a.id}&name=${encodeURIComponent(a.username)}">${a.username}</a>`
+              }
+            </td>
+            <td><span class="badge">${a.role === 'super_admin' ? 'Super Admin' : 'Admin'}</span></td>
+            <td><span class="pill ${statusPillClass(a.status)}">${a.status}</span></td>
+            <td class="text-dim">${formatDate(a.created_at)}</td>
+            <td>
+              ${a.username === user.username ? '<span class="text-dim">-</span>' : `
+                <button class="link-action" onclick="window.location.href='admin-network.html?id=${a.id}&name=${encodeURIComponent(a.username)}'">View Network</button>
+                <button class="link-action warning" onclick="toggleStatus(${a.id}, '${a.status}')">
+                  ${a.status === 'active' ? 'Suspend' : 'Reactivate'}
+                </button>
+              `}
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function toggleStatus(id, currentStatus) {
+      const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+      if (newStatus === 'suspended' && !confirm('Suspend this account?')) return;
+      try {
+        await apiFetch(`/admins/${id}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: newStatus })
+        });
+        loadAdmins();
+      } catch (err) { alert(err.message); }
+    }
+
+    loadAdmins();
+  </script>
+</body>
+</html>

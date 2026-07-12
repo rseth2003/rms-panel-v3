@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Server Config — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body" style="max-width:480px;">
+        <div class="card">
+          <div class="section-header">
+            <h2>Server Config</h2>
+          </div>
+          <p class="text-dim" style="font-size:0.82rem; margin-top:0;">
+            Set your VPS host and port once. Every VPN user's copyable
+            connection string is built from this. (UDP Custom only.)
+          </p>
+
+          <div class="form-group">
+            <label>Server Host / IP</label>
+            <input type="text" id="host" placeholder="e.g. 160.119.251.184">
+          </div>
+          <div class="form-group">
+            <label>Port Range</label>
+            <input type="text" id="portRange" placeholder="e.g. 1-65535">
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="saveConfig()">Save Config</button>
+          </div>
+          <p class="error-text hidden" id="formError"></p>
+          <p class="text-dim hidden" id="savedMsg" style="font-size:0.82rem;">Saved.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    if (user.role !== 'super_admin') window.location.href = 'vpn-users.html';
+    renderSidebar('server-config');
+    renderTopbar('Server Config');
+
+    async function loadConfig() {
+      try {
+        const cfg = await apiFetch('/server-config');
+        document.getElementById('host').value = cfg.host || '';
+        document.getElementById('portRange').value = cfg.port_range || '';
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function saveConfig() {
+      const errEl = document.getElementById('formError');
+      const savedEl = document.getElementById('savedMsg');
+      errEl.classList.add('hidden');
+      savedEl.classList.add('hidden');
+
+      const host = document.getElementById('host').value.trim();
+      const port_range = document.getElementById('portRange').value.trim();
+      if (!host || !port_range) {
+        errEl.textContent = 'Host and port range are required.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        await apiFetch('/server-config', {
+          method: 'PUT',
+          body: JSON.stringify({ host, port_range })
+        });
+        savedEl.classList.remove('hidden');
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    loadConfig();
+  </script>
+</body>
+</html>

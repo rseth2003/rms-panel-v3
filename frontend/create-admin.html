@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Create Admin Account — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body" style="max-width:480px;">
+        <div class="card">
+          <div class="section-header">
+            <h2>Create Admin Account</h2>
+            <a class="btn btn-ghost btn-sm" href="admins.html">← Back</a>
+          </div>
+
+          <div class="form-group">
+            <label>Account Type</label>
+            <select id="role">
+              <option value="admin">Admin — can manage resellers and VPN users only</option>
+              <option value="super_admin">Super Admin — full access, including managing other admins</option>
+            </select>
+          </div>
+
+          <p class="text-dim" style="font-size:0.8rem;">
+            Only give Super Admin access to people you fully trust — they'll be
+            able to create and suspend other admin accounts, edit server config,
+            and see everything in the system.
+          </p>
+
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="username">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="text" id="password">
+          </div>
+
+          <div class="form-actions">
+            <a class="btn btn-ghost" href="admins.html">Cancel</a>
+            <button class="btn btn-primary" onclick="submitCreate()">Create Account</button>
+          </div>
+          <p class="error-text hidden" id="formError"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    if (user.role !== 'super_admin') window.location.href = 'vpn-users.html';
+    renderSidebar('admins');
+    renderTopbar('Create Admin Account');
+
+    async function submitCreate() {
+      const errEl = document.getElementById('formError');
+      errEl.classList.add('hidden');
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const role = document.getElementById('role').value;
+
+      if (!username || !password) {
+        errEl.textContent = 'Username and password are required.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        await apiFetch('/admins', {
+          method: 'POST',
+          body: JSON.stringify({ username, password, role })
+        });
+        window.location.href = 'admins.html';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+      }
+    }
+  </script>
+</body>
+</html>

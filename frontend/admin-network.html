@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Admin Network — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+
+        <div class="card" style="background:var(--bg-elevated); margin-bottom:14px; padding:12px 16px;">
+          <a href="admins.html" style="color:var(--accent); font-size:0.85rem;">&larr; Back to Admins</a>
+          <span class="text-dim" style="font-size:0.85rem; margin-left:10px;">
+            Viewing <strong id="adminNameLabel" style="color:var(--text);"></strong>'s full network
+          </span>
+        </div>
+
+        <div class="stat-grid" id="statGrid"></div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <div class="section-header">
+            <h2 style="font-size:1rem;">Their Resellers</h2>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Username</th><th>Credits</th><th>VPN Users</th><th>Status</th></tr>
+            </thead>
+            <tbody id="resellerBody"></tbody>
+          </table>
+          <div id="resellerEmpty" class="empty-state hidden">This admin has no resellers yet.</div>
+        </div>
+
+        <div class="card">
+          <div class="section-header">
+            <h2 style="font-size:1rem;">All VPN Users In This Network</h2>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Username</th><th>Owner</th><th>Type</th><th>Expires</th><th>Status</th></tr>
+            </thead>
+            <tbody id="userBody"></tbody>
+          </table>
+          <div id="userEmpty" class="empty-state hidden">No VPN users in this network yet.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    if (user.role !== 'super_admin') window.location.href = 'home.html';
+    renderSidebar('admins');
+    renderTopbar('Admin Network');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const adminId = urlParams.get('id');
+    const adminName = urlParams.get('name');
+
+    if (!adminId) window.location.href = 'admins.html';
+
+    document.getElementById('adminNameLabel').textContent = adminName || `#${adminId}`;
+
+    function statCard(label, value, extraClass) {
+      return `
+        <div class="stat-card ${extraClass || ''}">
+          <div class="stat-value">${value}</div>
+          <div class="stat-label">${label}</div>
+        </div>
+      `;
+    }
+
+    async function loadNetwork() {
+      try {
+        const [resellers, users] = await Promise.all([
+          apiFetch(`/resellers?admin_id=${adminId}`),
+          apiFetch(`/vpn-users?network_of=${adminId}`)
+        ]);
+
+        // Resellers table
+        const resellerBody = document.getElementById('resellerBody');
+        const resellerEmpty = document.getElementById('resellerEmpty');
+        if (!resellers.length) {
+          resellerBody.innerHTML = '';
+          resellerEmpty.classList.remove('hidden');
+        } else {
+          resellerEmpty.classList.add('hidden');
+          resellerBody.innerHTML = resellers.map(r => `
+            <tr>
+              <td>
+                <a class="mono" style="color:var(--text);" href="vpn-users.html?owner_id=${r.id}&owner_name=${encodeURIComponent(r.username)}">
+                  ${r.username}
+                </a>
+              </td>
+              <td>${r.credits}</td>
+              <td>${r.total_vpn_users}</td>
+              <td><span class="pill ${statusPillClass(r.status)}">${r.status}</span></td>
+            </tr>
+          `).join('');
+        }
+
+        // VPN users table (their own directly-created users + their resellers')
+        const userBody = document.getElementById('userBody');
+        const userEmpty = document.getElementById('userEmpty');
+        if (!users.length) {
+          userBody.innerHTML = '';
+          userEmpty.classList.remove('hidden');
+        } else {
+          userEmpty.classList.add('hidden');
+          userBody.innerHTML = users.map(u => `
+            <tr>
+              <td class="mono">${u.username}</td>
+              <td>${u.owner_username}</td>
+              <td>${u.service_type === 'udp_custom' ? 'UDP Custom' : 'Hysteria2'}</td>
+              <td>${formatDate(u.expires_at)}</td>
+              <td><span class="pill ${statusPillClass(u.status)}">${u.status}</span></td>
+            </tr>
+          `).join('');
+        }
+
+        // Stat cards
+        const grid = document.getElementById('statGrid');
+        grid.innerHTML =
+          statCard('Resellers', resellers.length) +
+          statCard('Total VPN Users', users.length) +
+          statCard('Active', users.filter(u => u.status === 'active').length) +
+          statCard('Blocked', users.filter(u => u.status === 'blocked').length, 'offline');
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    loadNetwork();
+  </script>
+</body>
+</html>

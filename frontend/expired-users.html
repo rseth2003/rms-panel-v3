@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Expired Users — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+        <div class="card">
+          <div class="section-header">
+            <h2>Expired Users</h2>
+          </div>
+          <p class="text-dim" style="font-size:0.82rem; margin-top:-10px;">
+            These users were automatically disconnected and deleted the moment
+            they expired. Their details are kept here so you can quickly
+            renew (recreate) them without retyping anything.
+          </p>
+          <table>
+            <thead>
+              <tr><th>Username</th><th>Owner</th><th>Type</th><th>Limit</th><th>Expired</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">No expired users right now.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="renewModal" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000;">
+    <div class="card" style="width:360px; max-width:90vw;">
+      <div class="section-header">
+        <h2 id="renewModalUsername" style="font-size:1rem;"></h2>
+        <button class="btn btn-ghost btn-sm" onclick="closeRenewModal()">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Renewal Duration</label>
+        <div class="duration-row">
+          <input type="number" id="renewDurationValue" placeholder="e.g. 30" min="1">
+          <select id="renewDurationType">
+            <option value="minutes">Minutes</option>
+            <option value="hours">Hours</option>
+            <option value="days" selected>Days</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="closeRenewModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmRenew()">Renew User</button>
+      </div>
+      <p class="error-text hidden" id="renewError"></p>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('expired-users');
+    renderTopbar('Expired Users');
+    if (user.role === 'reseller') refreshCreditsDisplay();
+
+    let expiredList = [];
+
+    async function loadExpired() {
+      try {
+        expiredList = await apiFetch('/expired-users');
+        const body = document.getElementById('tableBody');
+        const empty = document.getElementById('emptyState');
+
+        if (!expiredList.length) {
+          body.innerHTML = '';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+
+        body.innerHTML = expiredList.map(e => `
+          <tr>
+            <td class="mono">${e.username}</td>
+            <td>${e.owner_username}</td>
+            <td>${e.service_type === 'udp_custom' ? 'UDP Custom' : 'Hysteria2'}</td>
+            <td>${e.connection_limit}</td>
+            <td class="text-dim">${formatDate(e.expired_at)}</td>
+            <td>
+              <button class="link-action" onclick="openRenewModal(${e.id})">Renew</button>
+              <button class="link-action danger" onclick="purgeExpired(${e.id})">Remove</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function openRenewModal(id) {
+      const record = expiredList.find(e => e.id === id);
+      if (!record) return;
+      document.getElementById('renewModalUsername').textContent = record.username;
+      document.getElementById('renewModal').dataset.id = id;
+      document.getElementById('renewDurationValue').value = '';
+      document.getElementById('renewError').classList.add('hidden');
+      document.getElementById('renewModal').classList.remove('hidden');
+    }
+
+    function closeRenewModal() {
+      document.getElementById('renewModal').classList.add('hidden');
+    }
+
+    async function confirmRenew() {
+      const id = document.getElementById('renewModal').dataset.id;
+      const duration_value = parseInt(document.getElementById('renewDurationValue').value, 10);
+      const duration_type = document.getElementById('renewDurationType').value;
+      const errEl = document.getElementById('renewError');
+      errEl.classList.add('hidden');
+
+      if (!duration_value) {
+        errEl.textContent = 'Enter a duration.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        await apiFetch(`/expired-users/${id}/renew`, {
+          method: 'POST',
+          body: JSON.stringify({ duration_type, duration_value })
+        });
+        closeRenewModal();
+        if (user.role === 'reseller') refreshCreditsDisplay();
+        loadExpired();
+        showToast('User renewed - find it back in VPN Users');
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    async function purgeExpired(id) {
+      if (!confirm('Permanently remove this record? This does not recreate the user, it just clears it from this list.')) return;
+      try {
+        await apiFetch(`/expired-users/${id}`, { method: 'DELETE' });
+        loadExpired();
+      } catch (err) { alert(err.message); }
+    }
+
+    loadExpired();
+    setInterval(loadExpired, 20000);
+  </script>
+</body>
+</html>

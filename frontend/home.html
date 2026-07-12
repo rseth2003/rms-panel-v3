@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Home — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+
+        <div class="card" id="welcomeCard" style="margin-bottom:20px;">
+          <h2 id="welcomeTitle" style="margin:0 0 4px; font-size:1.25rem;"></h2>
+          <p id="welcomeSub" class="text-dim" style="margin:0; font-size:0.85rem;"></p>
+        </div>
+
+        <div class="stat-grid" id="statGrid"></div>
+
+        <div class="card" id="actionsCard" style="margin-bottom:20px;">
+          <div class="section-header">
+            <h2 style="font-size:1rem;">Quick Actions</h2>
+          </div>
+          <div class="home-actions" id="actionsGrid"></div>
+        </div>
+
+        <div class="card" id="breakdownCard">
+          <div class="section-header">
+            <h2 id="breakdownTitle" style="font-size:1rem;"></h2>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Owner</th><th>Total</th><th>Online</th><th>Offline</th></tr>
+            </thead>
+            <tbody id="breakdownBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">Nothing to show yet.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('home');
+    renderTopbar('Home');
+    if (user.role === 'reseller') refreshCreditsDisplay();
+
+    document.getElementById('welcomeTitle').textContent = `Welcome back, ${user.username}`;
+    const subByRole = {
+      super_admin: 'Full visibility across every admin, reseller, and VPN user on this panel.',
+      admin: 'Showing your own VPN users and the resellers you manage — not the whole system.',
+      reseller: 'Showing your own VPN users and credit balance.'
+    };
+    document.getElementById('welcomeSub').textContent = subByRole[user.role] || '';
+
+    function statCard(label, value, extraClass) {
+      return `
+        <div class="stat-card ${extraClass || ''}">
+          <div class="stat-value">${value}</div>
+          <div class="stat-label">${label}</div>
+        </div>
+      `;
+    }
+
+    function actionCard(label, desc, href) {
+      return `
+        <a class="home-action-card" href="${href}">
+          <div class="home-action-label">${label}</div>
+          <div class="home-action-desc">${desc}</div>
+        </a>
+      `;
+    }
+
+    function renderActions() {
+      const grid = document.getElementById('actionsGrid');
+      let actions = '';
+
+      if (user.role === 'reseller') {
+        actions += actionCard('+ New VPN User', 'Create a user under your own account', 'create-vpn-user.html');
+        actions += actionCard('My VPN Users', 'View, renew, block, or delete your users', 'vpn-users.html');
+        actions += actionCard('Expired / Archived', 'Renew or clear out expired users', 'expired-users.html');
+        actions += actionCard('My Statistics', 'Your usage and online/offline breakdown', 'statistics.html');
+      } else if (user.role === 'admin') {
+        actions += actionCard('+ New Reseller', 'Add a reseller under your account', 'create-reseller.html');
+        actions += actionCard('+ New VPN User', 'Create a user directly under yourself', 'create-vpn-user.html');
+        actions += actionCard('My Resellers', 'Manage credits, status, and view their users', 'resellers.html');
+        actions += actionCard('My Network Users', 'VPN users you or your resellers created', 'vpn-users.html');
+        actions += actionCard('Expired / Archived', 'Renew or clear out expired users', 'expired-users.html');
+        actions += actionCard('Statistics', 'Breakdown across your network', 'statistics.html');
+      } else if (user.role === 'super_admin') {
+        actions += actionCard('+ New Admin', 'Add another admin to the panel', 'create-admin.html');
+        actions += actionCard('+ New Reseller', 'Add a reseller directly under yourself', 'create-reseller.html');
+        actions += actionCard('+ New VPN User', 'Create a user directly under yourself', 'create-vpn-user.html');
+        actions += actionCard('All Resellers', 'Every reseller across every admin', 'resellers.html');
+        actions += actionCard('All Admins', 'Manage admin accounts', 'admins.html');
+        actions += actionCard('Server Config', 'Host, port range, and system settings', 'server-config.html');
+        actions += actionCard('Logs', 'Full audit trail of every action', 'logs.html');
+      }
+
+      grid.innerHTML = actions;
+    }
+
+    function onlineBadge(isOnline) {
+      return `<span class="online-dot ${isOnline ? 'on' : 'off'}"></span>${isOnline ? 'Online' : 'Offline'}`;
+    }
+
+    async function loadDashboard() {
+      try {
+        const data = await apiFetch('/statistics');
+        const grid = document.getElementById('statGrid');
+        const s = data.summary;
+
+        let cards = '';
+        if (user.role === 'reseller') {
+          cards += statCard('Credits', user.credits != null ? user.credits : '-');
+        }
+        if (s.totalAdmins != null) {
+          cards += statCard('Admins', s.totalAdmins + 1);
+        }
+        if (s.totalResellers != null) {
+          cards += statCard(user.role === 'admin' ? 'My Resellers' : 'Resellers', s.totalResellers);
+        }
+        cards += statCard(user.role === 'reseller' ? 'My VPN Users' : 'VPN Users', s.totalUsers);
+        cards += statCard('Online Now', s.online, 'online');
+        cards += statCard('Offline', s.offline, 'offline');
+        cards += statCard('Expired (Archived)', s.expiredArchived, 'expired');
+        grid.innerHTML = cards;
+
+        const breakdownCard = document.getElementById('breakdownCard');
+        if (user.role === 'reseller') {
+          // Resellers manage nobody else - no breakdown table for them
+          breakdownCard.classList.add('hidden');
+        } else {
+          document.getElementById('breakdownTitle').textContent =
+            user.role === 'admin' ? 'Your Network — By Owner' : 'All Owners — Top by Users';
+          const body = document.getElementById('breakdownBody');
+          const rows = (data.perOwnerBreakdown || []).slice(0, 8);
+          if (!rows.length) {
+            document.getElementById('emptyState').classList.remove('hidden');
+          } else {
+            body.innerHTML = rows.map(r => `
+              <tr>
+                <td>${r.ownerUsername}</td>
+                <td>${r.totalUsers}</td>
+                <td>${onlineBadge(r.online > 0)} ${r.online}</td>
+                <td>${r.offline}</td>
+              </tr>
+            `).join('');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load dashboard:', err.message);
+      }
+    }
+
+    renderActions();
+    loadDashboard();
+  </script>
+</body>
+</html>

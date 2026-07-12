@@ -1,0 +1,26 @@
+{
+  "name": "rms-panel-backend",
+  "version": "2.0.0",
+  "description": "RMS UDP Custom Manager - Web Panel Backend",
+  "author": "RMS",
+  "copyright": "© 2026 RMS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "node-cron": "^3.0.3",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

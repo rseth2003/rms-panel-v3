@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Statistics — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+
+        <div class="stat-grid" id="statGrid"></div>
+
+        <p class="text-dim" style="font-size:0.78rem; margin-top:-8px;">
+          Online/offline is a best-effort signal based on active system
+          sessions for each user - it depends on how UDP Custom itself
+          handles connections, and may not be 100% precise.
+        </p>
+
+        <div class="card" id="breakdownCard">
+          <div class="section-header">
+            <h2 id="breakdownTitle" style="font-size:1rem;"></h2>
+          </div>
+          <table>
+            <thead id="breakdownHead"></thead>
+            <tbody id="breakdownBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">Nothing to show yet.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('statistics');
+    renderTopbar('Statistics');
+    if (user.role === 'reseller') refreshCreditsDisplay();
+
+    function statCard(label, value, extraClass) {
+      return `
+        <div class="stat-card ${extraClass || ''}">
+          <div class="stat-value">${value}</div>
+          <div class="stat-label">${label}</div>
+        </div>
+      `;
+    }
+
+    function onlineBadge(isOnline) {
+      return `<span class="online-dot ${isOnline ? 'on' : 'off'}"></span>${isOnline ? 'Online' : 'Offline'}`;
+    }
+
+    async function loadStatistics() {
+      try {
+        const data = await apiFetch('/statistics');
+        const grid = document.getElementById('statGrid');
+        const s = data.summary;
+
+        let cards = '';
+        if (data.scope === 'super_admin') {
+          cards += statCard('Super Admins & Admins', s.totalAdmins != null ? s.totalAdmins + 1 : '-');
+        }
+        if (s.totalResellers != null) {
+          cards += statCard('Resellers', s.totalResellers);
+        }
+        cards += statCard('Total VPN Users', s.totalUsers);
+        cards += statCard('Online Now', s.online, 'online');
+        cards += statCard('Offline', s.offline, 'offline');
+        cards += statCard('Expired (Archived)', s.expiredArchived, 'expired');
+        grid.innerHTML = cards;
+
+        const titleEl = document.getElementById('breakdownTitle');
+        const headEl = document.getElementById('breakdownHead');
+        const bodyEl = document.getElementById('breakdownBody');
+        const emptyEl = document.getElementById('emptyState');
+
+        if (data.scope === 'reseller') {
+          titleEl.textContent = 'My VPN Users';
+          headEl.innerHTML = '<tr><th>Username</th><th>Status</th><th>Expires</th></tr>';
+
+          if (!data.myUsers.length) {
+            bodyEl.innerHTML = '';
+            emptyEl.classList.remove('hidden');
+            return;
+          }
+          emptyEl.classList.add('hidden');
+          bodyEl.innerHTML = data.myUsers.map(u => `
+            <tr>
+              <td class="mono">${u.username}</td>
+              <td>${onlineBadge(u.online)}</td>
+              <td class="text-dim">${formatDate(u.expires_at)}</td>
+            </tr>
+          `).join('');
+        } else {
+          titleEl.textContent = 'Breakdown by Reseller';
+          headEl.innerHTML = '<tr><th>Owner</th><th>Total Users</th><th>Online</th><th>Offline</th></tr>';
+
+          if (!data.perOwnerBreakdown.length) {
+            bodyEl.innerHTML = '';
+            emptyEl.classList.remove('hidden');
+            return;
+          }
+          emptyEl.classList.add('hidden');
+          bodyEl.innerHTML = data.perOwnerBreakdown.map(o => `
+            <tr>
+              <td>${o.ownerUsername}</td>
+              <td>${o.totalUsers}</td>
+              <td>${o.online}</td>
+              <td class="text-dim">${o.offline}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    loadStatistics();
+    setInterval(loadStatistics, 20000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Logs — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+        <div class="card">
+          <div class="section-header">
+            <h2>Activity Logs</h2>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">No activity yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    renderSidebar('logs');
+    renderTopbar('Activity Logs');
+    if (user.role === 'reseller') refreshCreditsDisplay();
+
+    const actionLabels = {
+      create_vpn_user: 'Created VPN user',
+      renew_vpn_user: 'Renewed VPN user',
+      toggle_block_vpn_user: 'Blocked/Unblocked VPN user',
+      delete_vpn_user: 'Deleted VPN user',
+      auto_expired_deleted: 'Auto-expired & removed',
+      device_limit_enforced: 'Device limit enforced (kicked extra sessions)',
+      renew_expired_vpn_user: 'Renewed expired VPN user',
+      purge_expired_vpn_user: 'Removed expired user record',
+      create_reseller: 'Created reseller',
+      adjust_credits: 'Adjusted credits',
+      update_reseller_status: 'Updated reseller status',
+      create_admin_account: 'Created admin account',
+      update_admin_account_status: 'Updated admin account status',
+      update_server_config: 'Updated server config',
+      change_own_password: 'Changed their password',
+      account_locked: 'Account locked (too many failed logins)',
+      login: 'Logged in'
+    };
+
+    async function loadLogs() {
+      try {
+        const logs = await apiFetch('/logs');
+        const body = document.getElementById('tableBody');
+        const empty = document.getElementById('emptyState');
+
+        if (!logs.length) {
+          body.innerHTML = '';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+
+        body.innerHTML = logs.map(l => `
+          <tr>
+            <td class="text-dim">${formatDate(l.created_at)}</td>
+            <td>${l.actor_username || 'system'}</td>
+            <td>${actionLabels[l.action] || l.action}</td>
+            <td class="mono">${l.target_username || '-'}</td>
+            <td class="text-dim">${l.details || ''}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    loadLogs();
+    setInterval(loadLogs, 20000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Resellers — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main-content">
+      <div class="topbar" id="topbar"></div>
+      <div class="page-body">
+        <div class="card">
+          <div class="section-header">
+            <h2>Resellers</h2>
+            <a class="btn btn-primary" href="create-reseller.html">+ New Reseller</a>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Username</th><th>Credits</th><th>VPN Users</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden">No resellers yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    const user = requireAuth();
+    if (!['super_admin','admin'].includes(user.role)) window.location.href = 'vpn-users.html';
+    renderSidebar('resellers');
+    renderTopbar('Resellers');
+
+    async function loadResellers() {
+      try {
+        const resellers = await apiFetch('/resellers');
+        const body = document.getElementById('tableBody');
+        const empty = document.getElementById('emptyState');
+
+        if (!resellers.length) {
+          body.innerHTML = '';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+
+        body.innerHTML = resellers.map(r => `
+          <tr>
+            <td>
+              <a class="mono" style="color:var(--text);" href="vpn-users.html?owner_id=${r.id}&owner_name=${encodeURIComponent(r.username)}">
+                ${r.username}
+              </a>
+            </td>
+            <td>${r.credits}</td>
+            <td>
+              <a class="link-action" href="vpn-users.html?owner_id=${r.id}&owner_name=${encodeURIComponent(r.username)}">
+                ${r.total_vpn_users}
+              </a>
+            </td>
+            <td><span class="pill ${statusPillClass(r.status)}">${r.status}</span></td>
+            <td>
+              <button class="link-action" onclick="adjustCredits(${r.id})">Adjust Credits</button>
+              <button class="link-action warning" onclick="toggleStatus(${r.id}, '${r.status}')">
+                ${r.status === 'active' ? 'Suspend' : 'Reactivate'}
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function adjustCredits(id) {
+      const amount = prompt('Enter amount to add (or a negative number to deduct):');
+      if (!amount || isNaN(amount)) return;
+      try {
+        await apiFetch(`/resellers/${id}/credits`, {
+          method: 'PUT',
+          body: JSON.stringify({ amount: parseInt(amount, 10), reason: 'Manual adjustment via panel' })
+        });
+        loadResellers();
+      } catch (err) { alert(err.message); }
+    }
+
+    async function toggleStatus(id, currentStatus) {
+      const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+      try {
+        await apiFetch(`/resellers/${id}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: newStatus })
+        });
+        loadResellers();
+      } catch (err) { alert(err.message); }
+    }
+
+    loadResellers();
+  </script>
+</body>
+</html>

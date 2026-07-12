@@ -1,0 +1,15 @@
+[Unit]
+Description=RMS Panel API
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/rms-panel/backend
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/etc/rms-panel/backend/.env
+
+[Install]
+WantedBy=multi-user.target

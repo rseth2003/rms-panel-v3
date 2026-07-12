@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="RMS">
+<meta name="copyright" content="© 2026 RMS">
+<title>Preview Mode — RMS Panel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1>Preview Mode</h1>
+      <p class="sub">
+        No backend needed - this fakes a login just so you can look around
+        the theme and layout. Data tables will show errors since there's
+        no real API yet, but everything else (colors, sidebar, layout)
+        will look exactly like the real thing.
+      </p>
+
+      <div class="form-group">
+        <label>Preview as role</label>
+        <select id="previewRole">
+          <option value="super_admin">Super Admin</option>
+          <option value="admin">Admin</option>
+          <option value="reseller">Reseller</option>
+        </select>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="startPreview()">
+        Enter Preview
+      </button>
+
+      <p class="copyright-note" style="text-align:center; margin-top:20px;">© 2026 RMS</p>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    function startPreview() {
+      const role = document.getElementById('previewRole').value;
+      localStorage.setItem('rms_token', 'preview-mode-fake-token');
+      localStorage.setItem('rms_user', JSON.stringify({
+        username: 'preview_user',
+        role: role,
+        credits: role === 'reseller' ? 50 : 0
+      }));
+      window.location.href = 'vpn-users.html';
+    }
+  </script>
+</body>
+</html>
