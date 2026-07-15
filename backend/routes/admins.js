@@ -75,4 +75,51 @@ router.put('/:id/status', authRequired, requireRole('super_admin'), async (req, 
   res.json({ id, status });
 });
 
+// Delete an admin and their entire network (resellers + VPN users)
+router.delete('/:id', authRequired, requireRole('super_admin'), async (req, res) => {
+  const { id } = req.params;
+
+  const [rows] = await pool.query(
+    `SELECT * FROM accounts WHERE id = ? AND role IN ('super_admin','admin')`, [id]
+  );
+  const target = rows[0];
+  if (!target) return res.status(404).json({ error: 'Account not found' });
+
+  // Prevent deleting the last active super admin
+  if (target.role === 'super_admin') {
+    const [activeAdmins] = await pool.query(
+      `SELECT COUNT(*) AS count FROM accounts WHERE role = 'super_admin' AND status = 'active' AND id != ?`, [id]
+    );
+    if (activeAdmins[0].count === 0) {
+      return res.status(400).json({ error: 'Cannot delete the last active super admin' });
+    }
+  }
+
+  // Get all resellers under this admin
+  const [resellers] = await pool.query('SELECT id, username FROM accounts WHERE parent_id = ? AND role = "reseller"', [id]);
+  const { execSync } = require('child_process');
+
+  for (const reseller of resellers) {
+    // Get and delete all VPN users under each reseller
+    const [vpnUsers] = await pool.query('SELECT username FROM vpn_users WHERE owner_id = ?', [reseller.id]);
+    for (const u of vpnUsers) {
+      try {
+        execSync(`pkill -u ${u.username} 2>/dev/null; userdel --force ${u.username} 2>/dev/null; rm -f /etc/rms-users/${u.username}.expiry`, { stdio: 'ignore' });
+      } catch {}
+    }
+    await pool.query('DELETE FROM vpn_users WHERE owner_id = ?', [reseller.id]);
+    await pool.query('DELETE FROM expired_users WHERE owner_id = ?', [reseller.id]);
+    await pool.query('DELETE FROM logs WHERE actor_id = ?', [reseller.id]);
+    await pool.query('DELETE FROM credit_transactions WHERE account_id = ?', [reseller.id]);
+    await pool.query('DELETE FROM accounts WHERE id = ?', [reseller.id]);
+  }
+
+  // Delete the admin's own data
+  await pool.query('DELETE FROM logs WHERE actor_id = ?', [id]);
+  await pool.query('DELETE FROM accounts WHERE id = ?', [id]);
+
+  await logAction(req.user.id, 'delete_admin', target.username, `Deleted ${target.role} and ${resellers.length} resellers + their networks`, req.ip);
+  res.json({ success: true, message: `${target.role} ${target.username} and entire network deleted` });
+});
+
 module.exports = router;

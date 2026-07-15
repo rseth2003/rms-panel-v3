@@ -72,6 +72,7 @@
                 <button class="link-action warning" onclick="toggleStatus(${a.id}, '${a.status}')">
                   ${a.status === 'active' ? 'Suspend' : 'Reactivate'}
                 </button>
+                <button class="link-action danger" onclick="deleteAdmin(${a.id}, '${a.username}', '${a.role}')">Delete</button>
               `}
             </td>
           </tr>
@@ -89,6 +90,14 @@
           method: 'PUT',
           body: JSON.stringify({ status: newStatus })
         });
+        loadAdmins();
+      } catch (err) { alert(err.message); }
+    }
+
+    async function deleteAdmin(id, username, role) {
+      if (!confirm(`DELETE ${role} "${username}" and their ENTIRE network (all resellers + VPN users)?\n\nThis cannot be undone.`)) return;
+      try {
+        await apiFetch(`/admins/${id}`, { method: 'DELETE' });
         loadAdmins();
       } catch (err) { alert(err.message); }
     }

@@ -106,4 +106,39 @@ router.put('/:id/status', authRequired, requireRole('super_admin', 'admin'), asy
   res.json({ id, status });
 });
 
+// Delete a reseller and their entire network (all their VPN users too)
+router.delete('/:id', authRequired, requireRole('super_admin', 'admin'), async (req, res) => {
+  const { id } = req.params;
+
+  let ownerCheck = 'SELECT * FROM accounts WHERE id = ? AND role = "reseller"';
+  const ownerParams = [id];
+  if (req.user.role === 'admin') {
+    ownerCheck += ' AND parent_id = ?';
+    ownerParams.push(req.user.id);
+  }
+  const [rows] = await pool.query(ownerCheck, ownerParams);
+  if (!rows[0]) return res.status(404).json({ error: 'Reseller not found' });
+
+  const reseller = rows[0];
+
+  // Get all VPN users under this reseller and delete their system accounts
+  const [vpnUsers] = await pool.query('SELECT username FROM vpn_users WHERE owner_id = ?', [id]);
+  const { execSync } = require('child_process');
+  for (const u of vpnUsers) {
+    try {
+      execSync(`pkill -u ${u.username} 2>/dev/null; userdel --force ${u.username} 2>/dev/null; rm -f /etc/rms-users/${u.username}.expiry`, { stdio: 'ignore' });
+    } catch {}
+  }
+
+  // Delete VPN users, expired users, logs, transactions, then the account
+  await pool.query('DELETE FROM vpn_users WHERE owner_id = ?', [id]);
+  await pool.query('DELETE FROM expired_users WHERE owner_id = ?', [id]);
+  await pool.query('DELETE FROM logs WHERE actor_id = ?', [id]);
+  await pool.query('DELETE FROM credit_transactions WHERE account_id = ?', [id]);
+  await pool.query('DELETE FROM accounts WHERE id = ?', [id]);
+
+  await logAction(req.user.id, 'delete_reseller', reseller.username, `Deleted reseller and ${vpnUsers.length} VPN users`, req.ip);
+  res.json({ success: true, message: `Reseller ${reseller.username} and their entire network deleted` });
+});
+
 module.exports = router;

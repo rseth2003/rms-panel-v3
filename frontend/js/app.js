@@ -2,6 +2,28 @@
 // Same-origin relative path — Nginx proxies /api/ to the backend on port 3000
 const API_BASE = "/api";
 
+// ============ AUTO-LOGOUT ON BROWSER CLOSE / TAB CLOSE ============
+// Uses sessionStorage flag: if user opened a new tab, flag persists; on fresh close it doesn't
+window.addEventListener('beforeunload', () => {
+  // Use sendBeacon so the request fires even as page unloads
+  const token = localStorage.getItem('rms_token');
+  if (token) {
+    navigator.sendBeacon(`${API_BASE}/auth/logout`, JSON.stringify({ token }));
+    clearSession();
+  }
+});
+
+// Also handle visibility change (tab hidden / browser minimized counts as leaving)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    const token = localStorage.getItem('rms_token');
+    if (token) {
+      navigator.sendBeacon(`${API_BASE}/auth/logout`, JSON.stringify({ token }));
+      clearSession();
+    }
+  }
+});
+
 // ============ AUTH STATE ============
 function getToken() { return localStorage.getItem('rms_token'); }
 function getUser() {

@@ -8,8 +8,8 @@ const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
 
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_MINUTES = 15;
+const MAX_FAILED_ATTEMPTS = 2;
+const LOCKOUT_MINUTES = 10; // locked out after 2 attempts, try again after 10 mins
 
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
@@ -44,7 +44,7 @@ router.post('/login', async (req, res) => {
         [attempts, lockedUntil, account.id]
       );
       await logAction(account.id, 'account_locked', account.username, `${attempts} failed attempts`, req.ip);
-      return res.status(423).json({ error: `Too many failed attempts. Account locked for ${LOCKOUT_MINUTES} minutes.` });
+      return res.status(423).json({ error: `Too many failed attempts. Please try again later.` });
     }
     await pool.query('UPDATE accounts SET failed_login_attempts = ? WHERE id = ?', [attempts, account.id]);
     return genericError();
@@ -62,7 +62,7 @@ router.post('/login', async (req, res) => {
   const token = jwt.sign(
     { id: account.id, username: account.username, role: account.role, parent_id: account.parent_id, sid: sessionToken },
     process.env.JWT_SECRET,
-    { expiresIn: '12h' }
+    { expiresIn: '30m' }
   );
 
   await logAction(account.id, 'login', null, null, req.ip);

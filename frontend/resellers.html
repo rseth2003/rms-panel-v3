@@ -70,6 +70,7 @@
               <button class="link-action warning" onclick="toggleStatus(${r.id}, '${r.status}')">
                 ${r.status === 'active' ? 'Suspend' : 'Reactivate'}
               </button>
+              <button class="link-action danger" onclick="deleteReseller(${r.id}, '${r.username}')">Delete</button>
             </td>
           </tr>
         `).join('');
@@ -97,6 +98,14 @@
           method: 'PUT',
           body: JSON.stringify({ status: newStatus })
         });
+        loadResellers();
+      } catch (err) { alert(err.message); }
+    }
+
+    async function deleteReseller(id, username) {
+      if (!confirm(`DELETE reseller "${username}" and their ENTIRE network (all VPN users)?\n\nThis cannot be undone.`)) return;
+      try {
+        await apiFetch(`/resellers/${id}`, { method: 'DELETE' });
         loadResellers();
       } catch (err) { alert(err.message); }
     }
